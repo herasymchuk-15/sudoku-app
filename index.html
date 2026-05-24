@@ -23,10 +23,28 @@
         
         h3 { 
             font-size: 22px; 
-            margin: 0 0 20px 0; 
+            margin: 0 0 10px 0; 
             color: #deff9a; 
             font-weight: 600;
-            letter-spacing: 0.5px;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            width: 94vw;
+            max-width: 420px;
+            margin-bottom: 15px;
+            font-size: 16px;
+            color: #c4c4cc;
+            font-weight: 500;
+        }
+
+        .mistakes-badge {
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+            padding: 2px 10px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 107, 107, 0.2);
         }
         
         .grid { 
@@ -51,7 +69,6 @@
             justify-content: center; 
             font-size: 5.5vw; 
             font-weight: bold;
-            transition: background 0.2s;
         }
 
         @media (min-width: 450px) {
@@ -61,10 +78,8 @@
         .cell.fixed { 
             background: #121214; 
             color: #8d8d99; 
-            cursor: default; 
         }
         
-        /* Жирні лінії для блоків 3х3 */
         .thick-right { border-right: 2px solid #555861; }
         .thick-bottom { border-bottom: 2px solid #555861; }
         
@@ -79,11 +94,11 @@
             font-weight: 600;
             outline: none; 
             padding: 0;
+            transition: color 0.2s, background-color 0.2s;
         }
 
-        input:focus {
-            background: rgba(222, 255, 154, 0.1);
-        }
+        input.correct { color: #deff9a; }
+        input.wrong { color: #ff6b6b; background: rgba(255, 107, 107, 0.05); }
 
         input::-webkit-outer-spin-button,
         input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -102,17 +117,19 @@
             width: 94vw;
             max-width: 420px;
             box-shadow: 0 4px 12px rgba(222, 255, 154, 0.2);
-            transition: background 0.1s;
-        }
-        .btn:active {
-            background: #bdde79;
         }
     </style>
 </head>
 <body>
     <h3>Sudoku Challenge 🧩</h3>
+    
+    <div class="status-bar">
+        <div id="diff-label">Складність: ...</div>
+        <div class="mistakes-badge" id="mistakes-label">Помилки: 0 / 3</div>
+    </div>
+
     <div id="grid" class="grid"></div>
-    <button class="btn" onclick="checkGame()">Перевірити результат</button>
+    <button class="btn" onclick="tg.close()">Закрити гру ❌</button>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -120,7 +137,14 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const puzzle = urlParams.get('puz') || '0'.repeat(81);
-        const solution = urlParams.get('sol');
+        const solution = (urlParams.get('sol') || '').trim();
+        const difficulty = urlParams.get('diff') || 'Easy';
+
+        let mistakes = 0;
+        let maxMistakes = (difficulty === 'Hard' || difficulty === 'Важка') ? 2 : 3;
+
+        document.getElementById('diff-label').innerText = `Складність: ${difficulty}`;
+        document.getElementById('mistakes-label').innerText = `Помилки: ${mistakes} / ${maxMistakes}`;
 
         const gridEl = document.getElementById('grid');
         let inputs = [];
@@ -142,26 +166,50 @@
                 input.type = 'number';
                 input.pattern = '[1-9]*';
                 input.inputMode = 'numeric';
-                input.oninput = function() { 
-                    if(this.value.length > 1) this.value = this.value.slice(0,1); 
+
+                input.oninput = function() {
+                    if (this.value.length > 1) this.value = this.value.slice(0, 1);
+                    const val = this.value;
+
+                    if (!val) {
+                        this.className = '';
+                        return;
+                    }
+
+                    if (val === solution[i]) {
+                        this.className = 'correct';
+                        checkWin();
+                    } else {
+                        this.className = 'wrong';
+                        mistakes++;
+                        document.getElementById('mistakes-label').innerText = `Помилки: ${mistakes} / ${maxMistakes}`;
+                        
+                        if (mistakes >= maxMistakes) {
+                            setTimeout(() => {
+                                alert('❌ Гра закінчена! Ви вичерпали ліміт помилок.');
+                                tg.close();
+                            }, 100);
+                        }
+                    }
                 };
+
                 cell.appendChild(input);
                 inputs.push({el: input, index: i});
             }
             gridEl.appendChild(cell);
         }
 
-        function checkGame() {
+        function checkWin() {
             let currentBoard = puzzle.split('');
             inputs.forEach(item => {
                 currentBoard[item.index] = item.el.value || '0';
             });
             
             if (currentBoard.join('') === solution) {
-                alert('🎉 Вітаємо! Ви розв’язали судоку правильно!');
-                tg.close();
-            } else {
-                alert('❌ Є помилки або не всі клітинки заповнені. Спробуйте ще раз!');
+                setTimeout(() => {
+                    alert('🎉 Вітаємо! Ви ідеально розв’язали судоку!');
+                    tg.close();
+                }, 100);
             }
         }
     </script>
