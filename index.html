@@ -115,7 +115,25 @@
             padding: 20px;
         }
 
+        #waiting-screen { 
+            display: none; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 60vh; 
+        }
+
+        .loader { 
+            border: 4px solid #29292e; 
+            border-top: 4px solid #deff9a; 
+            border-radius: 50%; 
+            width: 40px; 
+            height: 40px; 
+            animation: spin 1s linear infinite; 
+        }
+
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         .btn { 
             background: #deff9a; 
@@ -134,14 +152,17 @@
     </style>
 </head>
 <body>
+    <div id="waiting-screen">
+        <div class="loader"></div>
+        <p style="margin-top: 20px; font-size: 18px; color: #c4c4cc;">Очікуємо опонента...</p>
+    </div>
+
     <div id="game-container">
         <h3>Sudoku Challenge 🧩</h3>
-        
         <div class="status-bar" id="status-bar">
             <div id="diff-label">Складність: ...</div>
             <div class="mistakes-badge" id="mistakes-label">Помилки: 0 / 3</div>
         </div>
-
         <div id="grid" class="grid"></div>
     </div>
 
@@ -156,7 +177,6 @@
         window.tg.expand();
 
         const urlParams = new URLSearchParams(window.location.search);
-        
         const puzzle = (urlParams.get('puz') || '').replace(/\D/g, '');
         const solution = (urlParams.get('sol') || '').replace(/\D/g, '');
         const difficulty = urlParams.get('diff') || 'Easy';
@@ -171,7 +191,16 @@
         let mistakes = 0;
         let maxMistakes = (difficulty === 'Hard' || difficulty === 'Важка') ? 2 : 3;
         let isGameOver = false;
+        let isGameStarted = (gameType !== 'duel');
         
+        const waitingScreen = document.getElementById('waiting-screen');
+        const gameContainer = document.getElementById('game-container');
+
+        if (!isGameStarted) {
+            gameContainer.style.display = 'none';
+            waitingScreen.style.display = 'flex';
+        }
+
         document.getElementById('diff-label').innerText = `Режим: ${gameType === 'duel' ? '⚔️ Дуель' : '👤 Одиночна'}`;
         document.getElementById('mistakes-label').innerText = `Помилки: ${mistakes} / ${maxMistakes}`;
 
@@ -197,7 +226,7 @@
                 input.inputMode = 'numeric';
                 
                 input.oninput = function() {
-                    if (isGameOver) return;
+                    if (isGameOver || !isGameStarted) return;
 
                     if (this.value.length > 1) this.value = this.value.slice(0, 1);
                     const val = this.value;
@@ -216,6 +245,18 @@
                         document.getElementById('mistakes-label').innerText = `Помилки: ${mistakes} / ${maxMistakes}`;
                         
                         if (mistakes >= maxMistakes) {
+                            if (gameId) {
+                                fetch(N8N_DUEL_WEBHOOK, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        action: 'submit_loss',
+                                        game_id: gameId,
+                                        user_id: userId,
+                                        user_name: userName
+                                    })
+                                }).catch(e => console.error(e));
+                            }
                             endGame(false, 'Ви вичерпали ліміт помилок.');
                         }
                     }
@@ -246,9 +287,22 @@
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        if (data.status === 'Finished' && data.winner_id && String(data.winner_id) !== String(userId)) {
+
+                        if (!isGameStarted) {
+                            if (data.property_player_2 || data.player_2) {
+                                isGameStarted = true;
+                                waitingScreen.style.display = 'none';
+                                gameContainer.style.display = 'flex';
+                            }
+                        }
+
+                        if (data.status === 'Finished') {
                             clearInterval(pollInterval);
-                            endGame(false, `Ви програли! <b>@${data.winner_name || 'Суперник'}</b> розв'язав судоку швидше. 🏁`);
+                            if (data.winner_id && String(data.winner_id) === String(userId)) {
+                                endGame(true, '⚔️ ДУЕЛЬ ВИГРАНА!<br><br>Ви перемогли, оскільки ваш опонент припустився критичної кількості помилок! Красава! 🚀');
+                            } else {
+                                endGame(false, `Ви програли! <b>@${data.winner_name || 'Суперник'}</b> фінішував раніше або виявився точнішим. 🏁`);
+                            }
                         }
                     }
                 } catch (e) {
@@ -266,7 +320,7 @@
             if (currentBoard.join('') === solution) {
                 if (pollInterval) clearInterval(pollInterval);
 
-                if (gameType === 'duel' && gameId) {
+                if (gameId) {
                     try {
                         const response = await fetch(N8N_DUEL_WEBHOOK, {
                             method: 'POST',
@@ -279,12 +333,15 @@
                             })
                         });
                         
-                        const data = await response.json();
-                        
-                        if (data.result === 'victory') {
-                            endGame(true, '⚔️ ДУЕЛЬ ВИГРАНА!<br><br>Ви ідеально розв’язали судоку першим! Обидва гравці отримали однакову сітку, але ви виявилися швидшим! Красава! 🚀');
+                        if (gameType === 'duel') {
+                            const data = await response.json();
+                            if (data.result === 'victory') {
+                                endGame(true, '⚔️ ДУЕЛЬ ВИГРАНА!<br><br>Ви ідеально розв’язали судоку першим! Обидва гравці отримали однакову сітку, але ви виявилися швидшим! Красава! 🚀');
+                            } else {
+                                endGame(false, `Ви програли! Хоч ви і розв'язали правильно, але <b>@${data.winner_name || 'Суперник'}</b> фінішував на декілька секунд раніше! 😭`);
+                            }
                         } else {
-                            endGame(false, `Ви програли! Хоч ви і розв'язали правильно, але <b>@${data.winner_name || 'Суперник'}</b> фінішував на декілька секунд раніше! 😭`);
+                            endGame(true, 'Ви ідеально розв’язали судоку! 🎉');
                         }
                     } catch (e) {
                         endGame(true, 'Ви розв’язали судоку!');
@@ -301,6 +358,7 @@
 
             setTimeout(() => {
                 document.getElementById('game-container').style.display = 'none';
+                document.getElementById('waiting-screen').style.display = 'none';
                 
                 const resScreen = document.getElementById('result-screen');
                 const title = document.getElementById('result-title');
