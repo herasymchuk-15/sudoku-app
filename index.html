@@ -186,7 +186,7 @@
         const userId = window.tg.initDataUnsafe?.user?.id || 'unknown';
         const userName = window.tg.initDataUnsafe?.user?.first_name || 'Гравець';
 
-        const N8N_DUEL_WEBHOOK = 'https://herasymchuk.app.n8n.cloud/webhook-test/sudoku-duel-status'; 
+        const N8N_DUEL_WEBHOOK = 'https://herasymchuk.app.n8n.cloud/webhook/sudoku-duel-status'; 
 
         let mistakes = 0;
         let maxMistakes = (difficulty === 'Hard' || difficulty === 'Важка') ? 2 : 3;
@@ -292,7 +292,7 @@
                             if (data.property_player_2 || data.player_2) {
                                 isGameStarted = true;
                                 waitingScreen.style.display = 'none';
-                                gameContainer.style.display = 'flex';
+                                gameContainer.style.display = 'block';
                             }
                         }
 
